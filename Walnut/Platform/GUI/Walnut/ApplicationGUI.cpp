@@ -336,6 +336,30 @@ static void FrameRender(Walnut::Application* application, ImGui_ImplVulkanH_Wind
 		s_ActiveCommandBuffer = fd->CommandBuffer;
 		check_vk_result(err);
 	}
+	for (auto& layer : application->GetLayerStack())
+		layer->OnRender();
+
+	{
+		VkImageMemoryBarrier barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+		barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = wd->Frames[wd->FrameIndex].Backbuffer; // swapchain image for this frame
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		vkCmdPipelineBarrier(fd->CommandBuffer,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			0, 0, nullptr, 0, nullptr, 1, &barrier);
+	}
+
 	{
 		VkRenderPassBeginInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -347,9 +371,6 @@ static void FrameRender(Walnut::Application* application, ImGui_ImplVulkanH_Wind
 		info.pClearValues = &wd->ClearValue;
 		vkCmdBeginRenderPass(fd->CommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
 	}
-
-	for (auto& layer : application->GetLayerStack())
-		layer->OnRender();
 
 	// Record dear imgui primitives into command buffer
 	ImGui_ImplVulkan_RenderDrawData(draw_data, fd->CommandBuffer);
@@ -860,6 +881,7 @@ namespace Walnut {
 		m_Running = true;
 
 		ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
+		wd->ClearEnable = false;
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		ImGuiIO& io = ImGui::GetIO();
 
@@ -903,7 +925,6 @@ namespace Walnut {
 					s_AllocatedCommandBuffers.clear();
 					s_AllocatedCommandBuffers.resize(g_MainWindowData.ImageCount);
 
-					g_SwapChainRebuild = false;
 				}
 			}
 
@@ -911,6 +932,13 @@ namespace Walnut {
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
 			ImGui::NewFrame();
+
+			if (g_SwapChainRebuild)
+			{
+				for (auto& layer : m_LayerStack)
+					layer->OnSwapchainRecreated();
+				g_SwapChainRebuild = false;
+			}
 
 			if (m_Specification.UseDockspace)
 			{
@@ -1104,6 +1132,38 @@ namespace Walnut {
 		vkDestroyFence(g_Device, fence, nullptr);
 	}
 
+
+	VkDescriptorSet Application::AllocateDescriptorSet(VkDescriptorSetLayout layout)
+	{
+		VkDevice device = GetDevice();
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = g_DescriptorPool;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = &layout;
+
+		VkDescriptorSet result;
+		vkAllocateDescriptorSets(device, &allocInfo, &result);
+		return result;
+	}
+
+	void Application::AllocateDescriptorSets(VkDescriptorSetLayout layout, uint32_t count, std::vector<VkDescriptorSet>& outDescriptorSets)
+	{
+		VkDevice device = GetDevice();
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = g_DescriptorPool;
+		allocInfo.descriptorSetCount = count;
+		allocInfo.pSetLayouts = &layout;
+
+		outDescriptorSets.resize(count);
+		vkAllocateDescriptorSets(device, &allocInfo, outDescriptorSets.data());
+	}
+
+	const VkDescriptorPool& Application::GetDescriptorPool()
+	{
+		return g_DescriptorPool;
+	}
 
 	void Application::SubmitResourceFree(std::function<void()>&& func)
 	{

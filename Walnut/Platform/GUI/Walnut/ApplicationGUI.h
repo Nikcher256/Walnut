@@ -24,7 +24,7 @@ namespace Walnut {
 
 	struct ApplicationSpecification
 	{
-		std::string Name = "Walnut App";
+		std::string Name = "Cubed";
 		uint32_t Width = 1600;
 		uint32_t Height = 900;
 
@@ -82,6 +82,10 @@ namespace Walnut {
 
 		static VkCommandBuffer GetCommandBuffer(bool begin);
 		static void FlushCommandBuffer(VkCommandBuffer commandBuffer);
+
+		static VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout);
+		static void AllocateDescriptorSets(VkDescriptorSetLayout layout, uint32_t count, std::vector<VkDescriptorSet>& outDescriptorSets);
+		static const VkDescriptorPool& GetDescriptorPool();
 
 		static void SubmitResourceFree(std::function<void()>&& func);
 

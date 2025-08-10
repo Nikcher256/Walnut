@@ -13,6 +13,7 @@ namespace Walnut {
 		virtual void OnUpdate(float ts) {}
 		virtual void OnRender() {}
 		virtual void OnUIRender() {}
+		virtual void OnSwapchainRecreated() {}
 	};
 
 }
